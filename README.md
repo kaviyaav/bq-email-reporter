@@ -1,110 +1,91 @@
-# 📊 BigQuery Reporting Automation
+# bq-email-reporter
 
-Automated email reporting pipeline using **Google BigQuery**, **Google Cloud Functions**, **Cloud Scheduler**, and **SendGrid** (or SMTP). Queries a BigQuery table on a schedule and delivers results as a formatted HTML table directly to your inbox.
-
----
-
-## 📸 Sample Output
-
-Below is a live email delivered by the pipeline — BigQuery query results formatted as a styled HTML table and sent via SendGrid:
-
-![Sample Email Output](docs/screenshots/image14.png)
+Automated BigQuery reporting pipeline that queries data on a schedule and delivers formatted HTML email reports via SendGrid and Google Cloud Functions.
 
 ---
 
-## 🏗️ Architecture Overview
+## Overview
+
+This project automates the process of running a BigQuery query and emailing the results as a styled HTML table. It runs entirely on GCP — a Cloud Scheduler job triggers a Cloud Function on a set schedule, which pulls data from BigQuery and sends it via SendGrid. The SendGrid API key is stored securely in Secret Manager and injected at runtime.
+
+The SMTP alternative (`main_smtp.py`) is included for local testing or environments without a SendGrid account.
+
+---
+
+## Architecture
 
 ```
 Cloud Scheduler (cron)
-        │
-        │  HTTP POST (every 5 min / custom schedule)
-        ▼
+        |
+        |  HTTP POST
+        v
 Cloud Function — EmailAlertPython
-        │
-        ├──► BigQuery  ──► pandas DataFrame
-        │         (SELECT * FROM TestData.TestTable)
-        │
-        ├──► pretty_html_table  ──► styled HTML table
-        │
-        └──► SendGrid API  ──► 📧 Email delivered
+        |
+        |-- BigQuery --> pandas DataFrame
+        |       (SELECT * FROM TestData.TestTable)
+        |
+        |-- pretty_html_table --> styled HTML
+        |
+        └-- SendGrid API --> email delivered
 ```
 
-**GCP Services used:**
+GCP services used:
 
 | Service | Role |
 |---|---|
 | BigQuery | Data source |
-| Cloud Functions (1st gen) | Serverless compute — runs the Python function |
+| Cloud Functions (1st gen) | Runs the Python function |
 | Cloud Scheduler | Cron-based trigger |
-| Secret Manager | Secure storage for the SendGrid API key |
-| SendGrid (via API) | Email delivery |
+| Secret Manager | Stores the SendGrid API key |
+| SendGrid | Email delivery |
 
 ---
 
-## 📁 Repository Structure
+## Project Structure
 
 ```
-bq-reporting-automation/
+bq-email-reporter/
 ├── src/
-│   ├── main.py              # Cloud Function — SendGrid version (primary)
-│   ├── main_smtp.py         # Cloud Function — SMTP/Mailtrap alternative
-│   └── requirements.txt     # Python dependencies for Cloud Function
-│
+│   ├── main.py              # Cloud Function — SendGrid version
+│   ├── main_smtp.py         # Cloud Function — SMTP alternative
+│   └── requirements.txt     # Python dependencies
 ├── config/
 │   └── gcp_config.md        # GCP resource configuration reference
-│
 ├── docs/
-│   └── screenshots/         # Architecture & setup screenshots
-│       ├── image1.png        # Cloud Function — HTTP trigger config
-│       ├── image2.png        # Secret Manager — API key binding
-│       ├── image3.png        # Encryption settings
-│       ├── image4.png        # Cloud Function — code editor view
-│       ├── image5.png        # Cloud Scheduler — define schedule
-│       ├── image6.png        # Cloud Scheduler — configure execution
-│       ├── image7.png        # Cloud Scheduler — auth & service account
-│       ├── image8.png        # GCP Console — Secret Manager navigation
-│       ├── image9.png        # Secret Manager — EMAIL_API_KEY versions
-│       ├── image10.png       # (additional config screenshot)
-│       ├── image11.png       # (additional config screenshot)
-│       ├── image12.png       # (additional config screenshot)
-│       ├── image13.png       # (additional config screenshot)
-│       └── image14.png       # ✅ Sample output — delivered email
-│
+│   └── screenshots/         # Setup and output screenshots
 ├── .github/
 │   └── workflows/
-│       └── lint.yml          # CI — flake8 + black lint check
-│
+│       └── lint.yml          # CI lint check
 ├── .gitignore
+├── LICENSE
 └── README.md
 ```
 
 ---
 
-## ⚙️ Prerequisites
+## Prerequisites
 
 - Google Cloud project with billing enabled
 - BigQuery dataset and table
-- [SendGrid account](https://sendgrid.com/) with a verified sender email
+- SendGrid account with a verified sender email
 - `gcloud` CLI installed and authenticated
 
 ---
 
-## 🚀 Setup & Deployment
+## Setup
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/<your-username>/bq-reporting-automation.git
-cd bq-reporting-automation
+git clone https://github.com/<your-username>/bq-email-reporter.git
+cd bq-email-reporter
 ```
 
 ### 2. Store the SendGrid API key in Secret Manager
 
 ```bash
-# Create the secret
 gcloud secrets create EMAIL_API_KEY --replication-policy="automatic"
 
-# Add your API key
 echo -n "SG.YOUR_SENDGRID_API_KEY" | \
   gcloud secrets versions add EMAIL_API_KEY --data-file=-
 ```
@@ -120,8 +101,7 @@ gcloud functions deploy EmailAlertPython \
   --source src/
 ```
 
-> In the Cloud Console, bind the `EMAIL_API_KEY` secret under  
-> **Function → Edit → Security and Image Repo → Secrets**.
+In the Cloud Console, bind the `EMAIL_API_KEY` secret under **Function > Edit > Security and Image Repo > Secrets** and expose it as an environment variable with the same name.
 
 ### 4. Create the Cloud Scheduler job
 
@@ -147,19 +127,19 @@ curl -m 70 -X POST \
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
-### Changing the query
+### Query
 
-Edit `src/main.py`:
+Edit `src/main.py` to point at your table:
 
 ```python
 query = """SELECT * FROM `your_project.your_dataset.your_table`"""
 ```
 
-### Changing the schedule
+### Schedule
 
-Modify the Cloud Scheduler cron expression. Examples:
+Common cron expressions for the Scheduler job:
 
 | Cron | Meaning |
 |---|---|
@@ -167,24 +147,25 @@ Modify the Cloud Scheduler cron expression. Examples:
 | `0 9 * * 1-5` | 9:00 AM, Mon–Fri |
 | `0 8 * * *` | 8:00 AM daily |
 
-### Changing the email theme
+### Email table theme
 
-`pretty_html_table` supports multiple colour themes:
+`pretty_html_table` supports several colour themes:
 
 ```python
-output_table = build_table(df, "blue_light")  # or: "green_dark", "orange_light", "grey_light" …
+output_table = build_table(df, "blue_light")
+# other options: "green_dark", "orange_light", "grey_light"
 ```
 
 ---
 
-## 📧 SMTP Alternative
+## SMTP Alternative
 
-If you prefer SMTP (e.g. Mailtrap for testing), use `src/main_smtp.py` as the Cloud Function source instead. Set the following environment variables on the function:
+To use SMTP instead of SendGrid, deploy `src/main_smtp.py` as the function source. Set these environment variables on the function:
 
 | Variable | Description |
 |---|---|
-| `SMTP_HOST` | SMTP host (e.g. `sandbox.smtp.mailtrap.io`) |
-| `SMTP_PORT` | SMTP port (e.g. `2525`) |
+| `SMTP_HOST` | SMTP server host |
+| `SMTP_PORT` | SMTP port |
 | `SMTP_USERNAME` | SMTP username |
 | `SMTP_PASSWORD` | SMTP password |
 | `EMAIL_SENDER` | Sender address |
@@ -192,7 +173,7 @@ If you prefer SMTP (e.g. Mailtrap for testing), use `src/main_smtp.py` as the Cl
 
 ---
 
-## 📦 Dependencies
+## Dependencies
 
 ```
 google-cloud-bigquery==3.10.0
@@ -203,56 +184,3 @@ pandas-gbq==0.13.1
 ```
 
 ---
-
-## 🖼️ Setup Screenshots
-
-### Cloud Function — HTTP Trigger
-![Cloud Function trigger](docs/screenshots/image1.png)
-
-### Cloud Function — Code & Runtime
-![Cloud Function code](docs/screenshots/image4.png)
-
-### Cloud Scheduler — Schedule Definition
-![Cloud Scheduler schedule](docs/screenshots/image5.png)
-
-### Cloud Scheduler — Execution Config
-![Cloud Scheduler execution](docs/screenshots/image6.png)
-
-### Secret Manager — API Key Binding
-![Secret Manager binding](docs/screenshots/image2.png)
-
-### Secret Manager — Key Versions
-![Secret Manager versions](docs/screenshots/image9.png)
-
----
-
-## 🛡️ Security Notes
-
-- **Never commit API keys or credentials.** The SendGrid key is stored in GCP Secret Manager and injected at runtime as an environment variable.
-- The `.gitignore` excludes all common secret file patterns.
-- The Cloud Scheduler job uses OIDC authentication with a service account that has only the **Cloud Functions Invoker** role.
-
----
-
-## 📋 Cloud Shell Setup Commands
-
-If you need to set up a local or Cloud Shell environment for testing:
-
-```bash
-pip install --upgrade google-cloud-bigquery 'google-cloud-bigquery[bqstorage,pandas]'
-pip install --upgrade pandas-gbq
-pip install pretty-html-table
-pip install sendgrid
-```
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
----
-
-## 📄 License
-
-[MIT](LICENSE)
